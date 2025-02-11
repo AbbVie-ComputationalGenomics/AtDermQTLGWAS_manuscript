@@ -1,0 +1,7 @@
+Includes code and data to generate manuscript figures. Additional data can be found at ## Specify FigShare repo
+
+. One (sub)folder per figure.
+
+. Each folder needs to include a) a folder named 'code', containing scripts with the code to generate the figure, and b) a folder named 'data', containing processed data to generate the figure. If data is too big to be included in the github, the 'data' folder needs to contain symbolic links / paths (in Magnus) to the data that serves as input to the figure. Include a README|R markdown with instructions/code on how to get the processed data that feeds the figure
+
+. Naming convention: fig.$FIGURE_NAME, where $FIGURE_NAME is an informative name for the figure. e.g. fig.AD_Manhattan_plot
