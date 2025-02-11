@@ -1,0 +1,7 @@
+[1] "face"
+Attaching SeuratObject
+[1] "face"
+Error in is.factor(x) : 
+  trying to get slot "meta.data" from an object of a basic class ("NULL") with no slots
+Calls: gsub -> is.factor -> grepl -> is.factor
+Execution halted

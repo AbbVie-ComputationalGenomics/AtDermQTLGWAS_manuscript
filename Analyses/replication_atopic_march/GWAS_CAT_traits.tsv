@@ -1,0 +1,5 @@
+traitgroup	traitterm	ontology
+ADeczema	atopiceczema	EFO_0000274
+ADeczema	eczema	HP_0000964
+allergy	allergicdisease	MONDO_0005271
+asthma	asthma	MONDO_0004979

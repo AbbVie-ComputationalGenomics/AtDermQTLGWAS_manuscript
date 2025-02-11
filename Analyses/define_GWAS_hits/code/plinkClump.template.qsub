@@ -1,0 +1,111 @@
+#!/bin/bash
+
+#SBATCH -J plink_1
+#SBATCH --nodes=1
+#SBATCH --tasks-per-node=8
+#SBATCH --mem=100GB
+#SBATCH --time=20:00:00
+#SBATCH -p magnus
+#SBATCH -o /ui/abv/olivamx2/scratch-global/UKB/plink_1.%x.%j.o 
+#SBATCH -e /ui/abv/olivamx2/scratch-global/UKB/plink_1.%x.%j.e
+
+
+ukb_dir=$PWD/data
+scratch_dir=/ui/abv/olivamx2/scratch-global/UKB
+
+# make sure plink really knows how many threads it can use! this might be system-specific variable
+export OMP_NUM_THREADS=8
+
+module load htslib
+
+echo Download hg38 assembly if not present. UKB genotype data is in hg19.
+if [[ ! -f $scratch_dir/Homo_sapiens.GRCh38.dna.primary_assembly.fa ]]; then
+	wget http://ftp.ensembl.org/pub/release-106/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+	mv Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz $scratch_dir
+	gunzip $scratch_dir/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+fi
+
+echo chr $chr
+# Select unrelated samples (see README in $HOME/UKB)
+# Select variants with info score > 0.3 and MAF > 0.01% in the set of 15k unrelated, ancestry-agnostic selected subjects
+# https://enkre.net/cgi-bin/code/bgen/wiki/?name=BGEN+in+the+UK+Biobank
+filt_variants_file=$ukb_dir/ukb_imp_chr"$chr"_v3.filtered_variants.info_score_dot3.maf_dotzerozeroone.txt
+awk '{if($6 > 0.001 && $8 > 0.3) {print $2}}' /ui/abv/olivamx2/UKB/ukb_mfi_chr"$chr"_v3.txt > $filt_variants_file 
+
+module load plink/plink2
+echo Remove previous files
+for sufix in $(echo bed bim fam hg38.bed.unlifted hg38.log log rmdup.mismatch); do
+	rm $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.$sufix
+echo Done
+done
+
+plink2 \
+	--make-bed \
+	--bgen $ukb_dir/ukb_imp_chr"$chr"_v3.bgen ref-first \
+	--sample $ukb_dir/ukb26041_imp_chr21_v3_s487395.sample \
+	--keep $ukb_dir/15000_ukb_unrelated_samples.txt \
+	--extract $filt_variants_file \
+	--out $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone
+
+# Identify duplicates
+plink2 \
+        --make-bed \
+        --rm-dup \
+        --bfile $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone \
+        --out $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone
+
+mv  $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.bim~  $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.bim
+mv  $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.fam~  $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.fam
+mv  $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.bed~  $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.bed
+
+# Select non-duplicated variants with HWE test < 1e-07 and genotype missigness < 5%
+plink2 \
+	--exclude /ui/abv/olivamx2/scratch-global/UKB/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.rmdup.mismatch \
+	--make-bed \
+        --bfile $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone \
+	--hwe 1e-07 \
+	--geno 0.05 \
+        --out $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone
+
+rm $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.*~
+
+# Liftover from b37 to hg38.
+# space to tab to generate UCSC bed files for liftOver from hg19 to hg38
+module load plink/plink
+plink --bfile $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone --keep-allele-order --recode tab --out $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.tab
+# apply liftOverPlink.py to update hg19 to hg38
+./src/liftOverPlink.py -m $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.tab.map -p $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.tab.ped -o $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38 -c $HOME/data/hg19ToHg38.over.chain.gz -e ~/software/liftOver
+rm $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.tab.*
+
+# Generate bed+fam+bim (plink2 does no accept map/ped)
+plink \
+        --make-bed \
+        --ped $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38.ped \
+        --map $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38.map \
+	--allow-extra-chr \
+        --out $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38
+
+rm $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38.map
+rm $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38.ped
+
+module load plink/plink2
+# Generate final plink bed+fam+bim files, setting REF allele to GRCh38. This is to match hg38-REF-mapped GWASs, as it is independent of allele frequency. It matters for GCTA (filters variants w/ discrepant freq)
+plink2 \
+	--make-bed \
+	--bfile $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38 \
+        --fa $scratch_dir/Homo_sapiens.GRCh38.dna.primary_assembly.fa \
+        --ref-from-fa force \
+	--allow-extra-chr \
+        --out $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38.final
+
+
+mv $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38.final.bed $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.bed
+mv $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38.final.fam $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.fam
+mv $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38.final.bim $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.bim
+
+rm $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38.bed
+rm $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38.fam
+rm $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.hg38.bim
+
+# Update filtered variant files
+cut -f 2 $scratch_dir/ukb_imp_chr"$chr"_v3.15000_ukb_unrelated_samples.filtered_variants.info_score_dot3.maf_dotzerozeroone.bim > $filt_variants_file 

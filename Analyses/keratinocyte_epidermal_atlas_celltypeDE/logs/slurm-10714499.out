@@ -1,0 +1,10 @@
+[1] "scalp"
+Attaching SeuratObject
+[1] "scalp"
+
+Keratinocyte        Other 
+        6599        13743 
+Error in subset(cs, colocScore %in% "Weak" & Include %in% "Y", select = "CandidateGene") : 
+  object 'cs' not found
+Calls: plot ... FeaturePlot -> FetchData -> FetchData.Seurat -> subset
+Execution halted

@@ -1,0 +1,1 @@
+Run scripts in main.define.GWAS.hits.sh sequentially. Make sure you create scratch dirs and modify scripts accordingly. 

@@ -1,0 +1,35 @@
+*********************************************************************
+* LD Score Regression (LDSC)
+* Version 1.0.1
+* (C) 2014-2019 Brendan Bulik-Sullivan and Hilary Finucane
+* Broad Institute of MIT and Harvard / MIT Department of Mathematics
+* GNU General Public License v3
+*********************************************************************
+Call: 
+./ldsc.py \
+--h2 /projects/abv/users/olivamx2/Projects/AD/reproduce_fanying/sLDSC/data/AD_EUR.sumstats.gz \
+--ref-ld-chr /projects/abv/users/olivamx2/Projects/AD/reproduce_fanying/sLDSC/data/eur_w_ld_chr/ \
+--out /projects/abv/users/olivamx2/Projects/AD/reproduce_fanying/sLDSC/results/heritability/AD_EUR_meta \
+--two-step 1000.0 \
+--pop-prev 0.15 \
+--samp-prev 0.095 \
+--w-ld-chr /projects/abv/users/olivamx2/Projects/AD/reproduce_fanying/sLDSC/data/eur_w_ld_chr/ 
+
+Beginning analysis at Mon Feb 13 13:37:02 2023
+Reading summary statistics from /projects/abv/users/olivamx2/Projects/AD/reproduce_fanying/sLDSC/data/AD_EUR.sumstats.gz ...
+Read summary statistics for 1192486 SNPs.
+Reading reference panel LD Score from /projects/abv/users/olivamx2/Projects/AD/reproduce_fanying/sLDSC/data/eur_w_ld_chr/[1-22] ... (ldscore_fromlist)
+Read reference panel LD Scores for 1290028 SNPs.
+Removing partitioned LD Scores with zero variance.
+Reading regression weight LD Score from /projects/abv/users/olivamx2/Projects/AD/reproduce_fanying/sLDSC/data/eur_w_ld_chr/[1-22] ... (ldscore_fromlist)
+Read regression weight LD Scores for 1290028 SNPs.
+After merging with reference panel LD, 1169536 SNPs remain.
+After merging with regression SNP LD, 1169536 SNPs remain.
+Using two-step estimator with cutoff at 1000.0.
+Total Liability scale h2: 0.0967 (0.0107)
+Lambda GC: 1.1683
+Mean Chi^2: 1.2925
+Intercept: 1.0496 (0.0123)
+Ratio: 0.1696 (0.0421)
+Analysis finished at Mon Feb 13 13:37:12 2023
+Total time elapsed: 9.89s

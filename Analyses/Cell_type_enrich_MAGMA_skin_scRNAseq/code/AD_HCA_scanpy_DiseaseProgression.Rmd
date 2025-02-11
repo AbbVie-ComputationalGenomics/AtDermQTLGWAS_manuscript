@@ -1,0 +1,191 @@
+---
+title: An R Markdown document converted from "AD_HCA_scanpy_DiseaseProgression.ipynb"
+output: html_document
+---
+
+```{python}
+# it works for disease progression program for Healthy and Lesion
+import scanpy as sc
+import numpy as np
+import pandas as pd
+import sys
+from collections import Counter
+```
+
+```{python}
+def compute_contamination(adata, ctlabel):
+    contamination = {}
+    for ct in set(adata.obs[ctlabel]):
+        scores = pd.DataFrame(adata.uns['rank_genes_groups']['scores'])[ct]
+        names = pd.DataFrame(adata.uns['rank_genes_groups']['names'])[ct]
+        threshold = np.mean(scores) - 6*np.std(scores)
+        contamination_genes = names[scores<threshold]
+        contamination[ct] = contamination_genes
+    return contamination
+```
+
+```{python}
+def compute_diseaseprogression_programs(filename, tissue, patientkey, celltypelabel, diagnosislabel, healthylabel, diseaselabel):
+    diseaselabel_mapping = {healthylabel:"Healthy", diseaselabel:"Disease"}
+    adata = sc.read(filename)
+    for ctlabel in [celltypelabel]:
+        subset = adata[adata.obs[diagnosislabel]==diseaselabel]
+        sc.tl.rank_genes_groups(subset, 
+                                use_raw=False,   #make sure use adata.X, not adata.raw.X
+                                groupby=ctlabel, 
+                                reference='rest', 
+                                n_genes=subset.shape[1], 
+                                method='wilcoxon')
+        
+        adata.uns['contamination_'+ctlabel] = compute_contamination(subset, celltypelabel)
+        adata.obs['DEstatus'] = [diseaselabel_mapping.get(diagnosis, 'Unknown') + '_' + ct for diagnosis, ct in zip(adata.obs[diagnosislabel], adata.obs[ctlabel])]
+        destatus_counts = Counter(adata.obs['DEstatus'])
+        discard = False
+        for ct in set(adata.obs[ctlabel]):
+            discard = False
+            for k in ['Healthy_'+ct, 'Disease_'+ct]:
+                if destatus_counts.get(k, 0) < 5:
+                    discard = True
+            print(ct, destatus_counts.get('Healthy_'+ct), destatus_counts.get('Disease_'+ct), discard)
+            if discard:
+                continue
+            sc.tl.rank_genes_groups(adata, 
+                                    use_raw=False,
+                                    groupby='DEstatus', 
+                                    reference='Healthy_'+ct, 
+                                    groups=['Disease_'+ct], 
+                                    key_added=ct+'_DE', 
+                                    n_genes=adata.shape[1], 
+                                    method='wilcoxon'
+                                   )
+        write_diseaseprogression_matrix(adata, 
+                                          filedir,
+                                          tissue,
+                                          celltypelabel)
+```
+
+```{python}
+def write_diseaseprogression_matrix(adata, filedir, filename, celltypelabel):
+    # set up the ordering of genes and cells
+    #adata = adatas[filename]
+    genes = list(set(adata.var_names))
+    gene2idx = {gene:i for i, gene in enumerate(genes)}
+    
+    pvalmtxs, logfoldmtxs, scoremtxs = [], [], []
+    ctlabels = [col for col in adata.uns if '_DE' in col]
+    print(adata.obs.columns)
+    print(ctlabels)
+    for delabel in ctlabels:
+        #delabel = ctlabel + '_DE'
+        ct = delabel.split('_')[0]
+        contamination = adata.uns['contamination_'+celltypelabel].get(ct, np.array([])).tolist()
+        
+        cellsubsets = adata.uns[delabel]['names'].dtype.fields.keys()
+        cell2idx = {cellsubset:i for i, cellsubset in enumerate(cellsubsets)}
+
+        # create empty matrix
+        pvalmtx = np.zeros((len(gene2idx), len(cell2idx)))
+
+        logfoldmtx = np.zeros((len(gene2idx), len(cell2idx)))
+        scoremtx = np.zeros((len(gene2idx), len(cell2idx)))
+
+        # loop through and fill up the matrix with pvalue, logfold and score
+        for gene, pval, logfold, score in zip(adata.uns[delabel]['names'], 
+                                       adata.uns[delabel]['pvals_adj'], 
+                                       adata.uns[delabel]['logfoldchanges'], 
+                                       adata.uns[delabel]['scores']):
+            for cell_subset in cellsubsets:
+                
+                if gene[cell_subset] in contamination:
+                    p = 1
+                    l = 0
+                    s = 0
+                else:
+                    p = pval[cell_subset]
+                    l = logfold[cell_subset]
+                    s = score[cell_subset]
+                
+                if gene[cell_subset] in gene2idx:
+                    pvalmtx[gene2idx[gene[cell_subset]], cell2idx[cell_subset]] = p
+                    logfoldmtx[gene2idx[gene[cell_subset]], cell2idx[cell_subset]] = l
+                    scoremtx[gene2idx[gene[cell_subset]], cell2idx[cell_subset]] = s
+
+        # transform matrix to dataframe
+        cellsubsets = [ct for ct in cellsubsets]
+        pvalmtxs.append(pd.DataFrame(pvalmtx, index=genes, columns=cellsubsets))
+        logfoldmtxs.append(pd.DataFrame(logfoldmtx, index=genes, columns=cellsubsets))
+        scoremtxs.append(pd.DataFrame(scoremtx, index=genes, columns=cellsubsets))
+    pvalmtxs = pd.concat(pvalmtxs, axis=1)
+    logfoldmtxs = pd.concat(logfoldmtxs, axis=1)
+    scoremtxs = pd.concat(scoremtxs, axis=1)
+
+    # write matrix to file
+    pvalmtxs.to_csv("%s/%s_pval.csv"%(filedir, filename))
+    logfoldmtxs.to_csv("%s/%s_logfold.csv"%(filedir, filename))
+    scoremtxs.to_csv("%s/%s_score.csv"%(filedir, filename))
+```
+
+```{python}
+# check the input data:
+# 1. Make sure cell_type and other values are STRING,not Integer
+# 2. Check adata.X, adata.raw.X. Make suer adata.X is the log normalized data
+```
+
+```{python}
+adata_test = sc.read("/projects/abv/users/tangfx1/scRNAseq_data/hca_skin_portal/HCA_AD_Lesion_vs_Healthy_level1.h5ad")
+adata_test.obs 
+```
+
+```{python}
+print(adata_test.X)
+```
+
+```{python}
+print(adata_test.raw.X)
+```
+
+```{python}
+adata_test
+```
+
+```{python}
+#compute_diseaseprogression_programs:
+#compute_diseaseprogression_programs(filename, 
+#                                            tissue, 
+#                                            sampleid, 
+#                                            celltypelabel, 
+#                                            diagnosislabel, 
+#                                            healthylabel, 
+#                                            diseaselabel
+#                                           )"
+# for 14 clusters:
+filedir = '/projects/abv/users/olivamx2/Projects/AD/reproduce_fanying/magma/data/hca_skin_portal/AD_HCA_scanpy_output/14_clusters_AD_Lesion_vs_HC_DP/' #the output dir
+filename = '/projects/abv/users/olivamx2/Projects/AD/reproduce_fanying/magma/data/hca_skin_portal/HCA_AD_Lesion_vs_Healthy_level1.h5ad' #the input and output file name
+compute_diseaseprogression_programs(filename,
+                                    'skin',
+                                    'sampleid',
+                                    'celltype_level1',
+                                    'Status',
+                                    'Healthy',
+                                    'Eczema'
+                                   )
+
+
+```
+
+```{python}
+# for 42 clusters:
+filedir = '//projects/abv/users/olivamx2/Projects/AD/reproduce_fanying/magma/data/hca_skin_portal/AD_HCA_scanpy_output/42_clusters_AD_Lesion_vs_HC_DP/' #the output dir
+filename = '/projects/abv/users/olivamx2/Projects/AD/reproduce_fanying/magma/data/hca_skin_portal/HCA_AD_Lesion_vs_Healthy_level2.h5ad' #the input and output file name
+compute_diseaseprogression_programs(filename,
+                                    'skin',
+                                    'sampleid',
+                                    'celltype_level2',
+                                    'Status',
+                                    'Healthy',
+                                    'Eczema'
+                                   )
+
+
+```
+
